@@ -1,9 +1,9 @@
 import akka.actor.ActorSystem
 import configs.RootConfigs
 import modules.scanner.ScanRequest
-import org.mongodb.scala.MongoClient
 import pureconfig.ConfigSource
 import pureconfig.generic.auto._
+import services.mongo.MongoTemplate
 
 object Main extends App {
 
@@ -15,17 +15,10 @@ object Main extends App {
       .load[RootConfigs]
       .fold(f => throw new Exception(f.prettyPrint()), s => s)
 
-  val mongoUri = configs.mongo.uri
-  val dbName = configs.mongo.dbName
-  val collectionName = configs.mongo.collection
+  ActorStarter.setUpActors(MongoTemplate(configs.mongo))
 
-  val client = MongoClient(mongoUri)
-  val database = client.getDatabase(dbName)
+  val scanner = system.actorSelection("user/Scanner")
 
-  ActorStarter.setUpActors
-
-  val fileScanner = system.actorSelection("user/FileScanner")
-
-  fileScanner ! ScanRequest("App started")
+  scanner ! ScanRequest("/Users/a1/Downloads/study/executables/main2.exe")
 
 }

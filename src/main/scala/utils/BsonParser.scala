@@ -7,7 +7,7 @@ import org.mongodb.scala.bson.collection.immutable.Document
 
 object BsonParser {
 
-  def decode[T](doc: Document)(implicit codec: Codec[T], decoderContext: DecoderContext): T = {
+  def decode[T](doc: Document, codec: Codec[T])(implicit decoderContext: DecoderContext): T = {
     val bson = BsonDocumentWrapper.asBsonDocument(doc, DEFAULT_CODEC_REGISTRY)
     val reader = new BsonDocumentReader(bson)
     codec.decode(reader, decoderContext)

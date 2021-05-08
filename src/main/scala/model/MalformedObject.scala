@@ -3,8 +3,10 @@ package model
 import io.circe.{Decoder, HCursor}
 import org.bson.codecs.Codec
 import org.mongodb.scala.MongoClient.DEFAULT_CODEC_REGISTRY
+import org.mongodb.scala.bson.ObjectId
 import org.mongodb.scala.bson.annotations.BsonProperty
 import org.mongodb.scala.bson.codecs.Macros
+import utils.UtilFunctions.md5
 
 case class MalformedObject(
   @BsonProperty("_id") id: String,
@@ -37,5 +39,17 @@ object MalformedObject {
       new MalformedObject(id, name, length, prefix, hash, offsetStart, offsetEnd)
     }
   }
+
+  //TODO: Удалить после дебагов
+  def apply(name: String, signature: Array[Byte], offsetStart: Long, offsetEnd: Long): MalformedObject =
+    MalformedObject(
+      new ObjectId().toHexString,
+      name,
+      signature.length,
+      signature.take(7),
+      md5(signature),
+      offsetStart,
+      offsetEnd
+    )
 
 }
