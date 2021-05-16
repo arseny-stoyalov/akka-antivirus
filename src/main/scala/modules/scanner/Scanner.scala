@@ -23,6 +23,7 @@ class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
     case r: ScanRequest =>
       logger.debug(s"Got request from ${sender().path}")
       val bytes = Files.readAllBytes(Paths.get(r.path))
+
       signatures
         .find()
         .subscribe(new Observer[Document] {
@@ -40,6 +41,8 @@ class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
           override def onComplete(): Unit =
             logger.debug("Signatures scanning finished")
         })
+
+    case _: String => context.stop(context.self)
 
   }
 
