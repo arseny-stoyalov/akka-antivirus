@@ -2,7 +2,7 @@ package modules.storage
 
 import akka.actor.Actor
 import com.typesafe.scalalogging.LazyLogging
-import model.MalformedObject
+import model.MalwareObject
 import org.mongodb.scala.Observer
 import org.mongodb.scala.bson.collection.immutable.Document
 import services.mongo.MongoTemplate
@@ -22,7 +22,7 @@ class AntivirusStorage(mongoTemplate: MongoTemplate) extends Actor with LazyLogg
         .find()
         .subscribe(new Observer[Document] {
           override def onNext(result: Document): Unit =
-            sender() ! BsonParser.decode(result, MalformedObject.bsonCodec)
+            sender() ! BsonParser.decode(result, MalwareObject.bsonCodec)
 
           override def onError(e: Throwable): Unit = logger.error("Failed to get a signature", e)
 

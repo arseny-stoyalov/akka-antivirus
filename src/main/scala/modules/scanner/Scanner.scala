@@ -1,32 +1,45 @@
 package modules.scanner
 
-import akka.actor.Actor
+import akka.actor.{Actor, ActorRef}
 import com.typesafe.scalalogging.LazyLogging
-import model.MalformedObject
-import modules.storage.SignatureRequest
+import model.MalwareObject
+import org.mongodb.scala.Observer
+import org.mongodb.scala.bson.collection.immutable.Document
+import services.mongo.MongoTemplate
+import utils.BsonParser
+import utils.implicits.Global.bsonDecoderContext
 
 import java.nio.file.{Files, Paths}
 import scala.annotation.tailrec
 
-case class ScanRequest(path: String)
+case class ScanRequest(path: String, replyTo: ActorRef)
+case class ScanResponse(path: String, matchedMalware: Boolean, malwareName: Option[String])
 
-class Scanner extends Actor with LazyLogging {
+class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
 
-  private val storage = context.actorSelection("user/AntivirusStorage")
-
-  var path: String = ""
+  private val signatures = mongoTemplate.collections.signatures
 
   override def receive: Receive = {
     case r: ScanRequest =>
-      path = r.path
-      storage ! SignatureRequest
+      logger.debug(s"Got request from ${sender().path}")
+      val bytes = Files.readAllBytes(Paths.get(r.path))
+      signatures
+        .find()
+        .subscribe(new Observer[Document] {
+          override def onNext(result: Document): Unit = {
+            val next = BsonParser.decode(result, MalwareObject.bsonCodec)
+            if (next.prefix.nonEmpty) {
+              val trimmedByOffsets = bytes.drop(next.offsetStart).dropRight(next.offsetEnd)
+              val matched = find(trimmedByOffsets, next.prefix, Array.emptyByteArray)
+              r.replyTo ! ScanResponse(r.path, matched, Some(next.name))
+            }
+          }
 
-    case next: MalformedObject =>
-      val bytes = Files.readAllBytes(Paths.get(path))
-      next.prefix.headOption match {
-        case Some(_) => find(bytes, next.prefix, Array.emptyByteArray)
-        case None => false
-      }
+          override def onError(e: Throwable): Unit = logger.error("Failed to get a signature", e)
+
+          override def onComplete(): Unit =
+            logger.debug("Signatures scanning finished")
+        })
 
   }
 
