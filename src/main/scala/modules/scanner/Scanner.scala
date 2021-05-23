@@ -1,6 +1,6 @@
 package modules.scanner
 
-import akka.actor.{Actor, ActorRef}
+import akka.actor.Actor
 import com.typesafe.scalalogging.LazyLogging
 import model.MalwareObject
 import modules.scanner.Scanner.isInfected
@@ -11,19 +11,20 @@ import utils.BsonParser
 import utils.UtilFunctions.md5
 import utils.implicits.Global.bsonDecoderContext
 
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path}
 import scala.annotation.tailrec
 
-case class ScanRequest(path: String, replyTo: ActorRef)
-case class ScanResponse(path: String, matchedMalware: Boolean, malwareName: Option[String])
+case class ScanRequest(path: Path)
+case class ScanResponse(path: Path, matchedMalware: Boolean, malwareName: Option[String])
 
 class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
 
   private val signatures = mongoTemplate.collections.signatures
+  private val receiver = context.actorSelection("user/InitialActor")
 
   override def receive: Receive = {
     case r: ScanRequest =>
-      val bytes = Files.readAllBytes(Paths.get(r.path))
+      val bytes = Files.readAllBytes(r.path)
 
       signatures
         .find()
@@ -32,7 +33,7 @@ class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
             val next = BsonParser.decode(result, MalwareObject.bsonCodec)
             if (next.prefix.nonEmpty) {
               val trimmedByOffsets = bytes.drop(next.offsetStart).dropRight(next.offsetEnd)
-              r.replyTo ! ScanResponse(r.path, isInfected(trimmedByOffsets, next), Some(next.name))
+              receiver ! ScanResponse(r.path, isInfected(trimmedByOffsets, next), Some(next.name))
             }
           }
 
