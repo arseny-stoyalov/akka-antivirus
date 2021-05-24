@@ -51,4 +51,7 @@ libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"
 
+libraryDependencies += "com.github.pathikrit" % "better-files_2.13" % "3.9.1"
+libraryDependencies += "commons-io" % "commons-io" % "2.8.0"
+
 libraryDependencies += "io.monix" %% "monix" % "3.1.0"
