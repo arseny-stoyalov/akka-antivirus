@@ -9,6 +9,7 @@ import org.mongodb.scala.bson.BsonDocument
 import org.mongodb.scala.bson.collection.immutable.Document
 import pureconfig.ConfigSource
 import pureconfig.generic.auto._
+import pureconfig.module.yaml.YamlConfigSource
 import utils.BsonParser
 import utils.UtilFunctions.md5
 import utils.implicits.Global.{bsonDecoderContext, bsonEncoderContext}
@@ -35,8 +36,8 @@ object DebugPoint extends App {
   val toInsert = MalwareObject("harder to find malware", signature, 100, 100)
 
   val configs =
-    ConfigSource
-      .file("src/main/resources/application.properties")
+    YamlConfigSource
+      .file("src/main/resources/application.yaml")
       .load[RootConfigs]
       .fold(f => throw new Exception(f.prettyPrint()), s => s)
 

@@ -1,55 +1,79 @@
 package modules.detection
 
-import akka.actor.{Actor, ActorRef, ActorSelection}
+import akka.actor.{Actor, ActorRef}
+import configs.MagicNumberConfig
 import modules.bypass.ResolveDirRequest
 import modules.scanner.ScanRequest
+import org.apache.commons.io.FilenameUtils
+import utils.UtilFunctions.{acceptsMagicNumber, deleteDirWithContents, using}
+import cats.syntax.option._
+import com.typesafe.scalalogging.LazyLogging
 
-import java.io.{FileInputStream, FileOutputStream, RandomAccessFile}
 import java.nio.file.{Files, Path, Paths}
-import java.util.zip.ZipInputStream
+import java.util.zip.ZipFile
+import scala.jdk.CollectionConverters.EnumerationHasAsScala
 
-case class DetectionRequest(path: String, replyTo: ActorRef)
+case class ScanObject(path: Path, zipFileRef: Option[Path])
 
-class ScanObjectDetector(dirResolver: ActorRef) extends Actor {
+class ScanObjectDetector(config: MagicNumberConfig, temps: Path) extends Actor with LazyLogging {
 
-  val scanner: ActorSelection = context.actorSelection("user/Scanner")
+  private val dirResolver = context.system.actorSelection("user/DirectoryResolver")
+  private val tempDirCleaner = context.system.actorSelection("user/TempDirCleaner")
+  private val scanner = context.system.actorSelection("user/Scanner")
 
   override def receive: Receive = {
 
-    case r: DetectionRequest =>
-      val p = Paths.get(r.path)
-      println(s"${r.path} ${Files.isDirectory(p)}")
-      resolveDir(p)
+    case dir: ScanObject if Files.isDirectory(dir.path) =>
+      dirResolver ! ResolveDirRequest(dir, context.self)
 
-    case path: Path if !Files.isDirectory(path) =>
-      val raf = new RandomAccessFile(path.toFile, "r")
-      raf.readInt() match {
-        case 0x504B0304 | 0x504B0506 | 0x504B0708 => processZip(path)
-        case _ => resolveExecutable(path)
+    case file: ScanObject =>
+      file match {
+        case zip if acceptsMagicNumber(zip.path.toFile, config.zip) => processZip(file)
+        case exe if acceptsMagicNumber(exe.path.toFile, config.executable) => processExecutable(file)
+        case _ => ()
       }
 
   }
 
-  def resolveDir(path: Path) =
-    if (Files.isDirectory(path))
-      dirResolver ! ResolveDirRequest(path, context.self)
-    else context.self ! path
+  override def postStop(): Unit =
+    deleteDirWithContents(temps)
 
-  def processZip(path: Path) = {
+  def processExecutable(scanObject: ScanObject) =
+    scanner ! ScanRequest(scanObject.path, scanObject.zipFileRef)
 
-    val zis = new ZipInputStream(new FileInputStream(path.toFile))
+  def processZip(scanObject: ScanObject) = {
+    val name = FilenameUtils.removeExtension(scanObject.path.getFileName.toString)
+    val temp = Files.createTempDirectory(temps, name)
 
-    LazyList.continually(zis.getNextEntry).takeWhile(_ != null).foreach { file =>
-      val fout = new FileOutputStream(file.getName)
-      val buffer = new Array[Byte](1024)
-      LazyList.continually(zis.read(buffer)).takeWhile(_ != -1).foreach(fout.write(buffer, 0, _))
+    tempDirCleaner ! temp
+
+    unzip(scanObject.path, temp)
+
+    val unzipped = temp.resolve(name)
+
+    temp.toFile.listFiles().foreach { f =>
+      val p = Paths.get(f.getAbsolutePath)
+      if (p != unzipped) deleteDirWithContents(p)
     }
-    //https://www.baeldung.com/java-compress-and-uncompress
+
+    context.self ! ScanObject(unzipped, scanObject.zipFileRef.getOrElse(scanObject.path).some)
 
   }
 
-  def resolveExecutable(path: Path) =
-    if (path.toFile.canExecute)
-      scanner ! ScanRequest(path)
+  def unzip(zipPath: Path, outputPath: Path): Unit =
+    using(new ZipFile(zipPath.toFile)) { zipFile =>
+      for (entry <- zipFile.entries.asScala) {
+        val path = outputPath.resolve(entry.getName)
+        if (entry.isDirectory) {
+          Files.createDirectories(path)
+        } else {
+          Files.createDirectories(path.getParent)
+          Files.copy(zipFile.getInputStream(entry), path)
+        }
+      }
+    } {
+      case e: Exception =>
+        logger.error(s"Failed to unzip ${zipPath.getFileName}", e)
+    }
 
 }

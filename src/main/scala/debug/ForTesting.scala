@@ -1,34 +1,50 @@
 package debug
 
-import better.files.{File, StringInterpolations}
+import org.apache.commons.io.filefilter.MagicNumberFileFilter
 import org.apache.commons.io.{FileUtils, FilenameUtils}
+import utils.UtilFunctions.using
 
-import java.io.{FileInputStream, FileOutputStream}
+import java.io.{File, FileInputStream, FileOutputStream, RandomAccessFile}
+import java.nio.charset.Charset
 import java.nio.file.{Files, Path, Paths}
-import java.util.zip.{ZipEntry, ZipInputStream}
+import java.util.Comparator
+import java.util.zip.{ZipEntry, ZipFile, ZipInputStream}
+import scala.jdk.CollectionConverters.EnumerationHasAsScala
 
 object ForTesting extends App {
 
   def processZip(path: Path) = {
-
-    val zipFile = File(path)
+    import scala.jdk.StreamConverters._
 
     val name = FilenameUtils.removeExtension(path.getFileName.toString)
+    val temp = Files.createTempDirectory(path.getParent, ".scanner_")
 
-    val temp = Files.createTempDirectory(zipFile.path.getParent, ".")
+    unzip(path, temp)
 
-    zipFile.unzipTo(destination = temp)
+    val unzipped = temp.resolve(name)
 
-    println(temp.resolve(name))
+    temp.toFile.listFiles().foreach { f =>
+      val p = Paths.get(f.getAbsolutePath)
+      if (p != unzipped) Files.walk(p).sorted(Comparator.reverseOrder[Path]()).toScala(List).foreach(Files.delete)
+    }
 
-    temp
-      .resolve(name)
-      .toFile
-      .listFiles()
-      .foreach(f => println(s"$f ${Files.isExecutable(Paths.get(f.getAbsolutePath))}"))
+    println(unzipped.getFileName)
 
   }
 
-  processZip(Paths.get("/Users/a1/Downloads/study/executables.zip"))
+  def unzip(zipPath: Path, outputPath: Path): Unit =
+    using(new ZipFile(zipPath.toFile)) { zipFile =>
+      for (entry <- zipFile.entries.asScala) {
+        val path = outputPath.resolve(entry.getName)
+        if (entry.isDirectory) {
+          Files.createDirectories(path)
+        } else {
+          Files.createDirectories(path.getParent)
+          Files.copy(zipFile.getInputStream(entry), path)
+        }
+      }
+    }(???)
+
+  processZip(Paths.get("/Users/a1/Downloads/study/executables/executables.zip"))
 
 }

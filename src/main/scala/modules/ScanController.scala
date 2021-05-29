@@ -1,13 +1,13 @@
-package modules.scanner
+package modules
 
 import akka.actor.{Actor, ActorRef}
+
 import scala.collection.mutable.{Map => MutableMap}
 
 case class ScanProcess(path: String, scanner: ActorRef)
 case class StopFileScanProcess(path: String)
 case class StopDirectoryScanProcess(path: String)
 
-//Если кто-то это читает, то войдите в положение, времени было мало
 class ScanController extends Actor {
 
   var processes: MutableMap[String, ActorRef] = MutableMap()

@@ -1,39 +1,44 @@
 import akka.actor.{Actor, ActorSystem, Props}
-import modules.detection.{DetectionRequest, ScanObjectDetector}
-import modules.scanner.{ScanRequest, ScanResponse, Scanner}
-import modules.storage.AntivirusStorage
+import configs.{MagicNumberConfig, RootConfigs}
+import modules.bypass.DirectoryResolver
+import modules.detection.{ScanObject, ScanObjectDetector, TempDirCleaner}
+import modules.scanner.{ScanResponse, Scanner}
+import modules.schedule.ScanScheduler
 import services.mongo.MongoTemplate
+
+import java.nio.file.{Files, Path, Paths}
 
 object ActorStarter {
 
-  case object StopRequest
+  class ScannerManager(magicNumberConfig: MagicNumberConfig) extends Actor {
 
-  class ScannerManager(mongoTemplate: MongoTemplate) extends Actor {
+    val temps: Path =
+      Files.createTempDirectory(Paths.get("/Users/a1/Downloads/study"), ".")
 
-    private val scanner = context.actorOf(Props(classOf[Scanner], mongoTemplate), "Scanner")
-    private val detector = context.actorOf(Props(classOf[ScanObjectDetector]), "ScanObjectDetector")
+    private val detector =
+      context.actorOf(Props(classOf[ScanObjectDetector], magicNumberConfig, temps), "ScanObjectDetector")
 
     override def preStart(): Unit = {
       println("Initial message sent")
-//      detector ! DetectionRequest("/Users/a1/Downloads/study/executables", context.self)
-      detector ! DetectionRequest("/Users/a1/Downloads/study/executables/main1.exe", context.self)
-//      scanner ! ScanRequest("/Users/a1/Downloads/study/executables/main1.exe", context.self)
-//      scanner ! ScanRequest("/Users/a1/Downloads/study/executables/main2.exe", context.self)
-//      scanner ! ScanRequest("/Users/a1/Downloads/study/executables/main3.exe", context.self)
+      detector ! ScanObject(Paths.get("/Users/a1/Downloads/study/executables"), None)
     }
 
     override def receive: Receive = {
       case r: ScanResponse =>
         println(r)
-      case StopRequest => context.stop(scanner)
     }
 
   }
 
-  def setUpActors(mongoTemplate: MongoTemplate)(implicit system: ActorSystem): Unit = {
+  def setUpActors(configs: RootConfigs)(implicit system: ActorSystem): Unit = {
 
-    system.actorOf(Props(classOf[AntivirusStorage], mongoTemplate), "AntivirusStorage")
-    system.actorOf(Props(classOf[ScannerManager], mongoTemplate), "ScannerManager")
+    val mongoTemplate = MongoTemplate(configs.mongo)
+
+    system.actorOf(Props(classOf[Scanner], mongoTemplate), "Scanner")
+    system.actorOf(Props(classOf[ScannerManager], configs.magicNumbers), "ScannerManager") //todo: refactor
+    system.actorOf(Props(classOf[DirectoryResolver]), "DirectoryResolver")
+    system.actorOf(Props(classOf[TempDirCleaner], configs.tempDirCleaner), "TempDirCleaner")
+    system.actorOf(Props(classOf[ScanScheduler], configs.magicNumbers), "ScanScheduler")
 
 //    system.scheduler.scheduleOnce(5.millis)(initialActor ! "Stop")(system.dispatcher)
 

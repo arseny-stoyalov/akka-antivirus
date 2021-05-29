@@ -1,43 +1,51 @@
 package modules.scanner
 
 import akka.actor.Actor
-import com.typesafe.scalalogging.LazyLogging
+import com.typesafe.scalalogging.{LazyLogging, Logger}
 import model.MalwareObject
 import modules.scanner.Scanner.isInfected
+import monix.reactive.Observable
 import org.mongodb.scala.Observer
 import org.mongodb.scala.bson.collection.immutable.Document
 import services.mongo.MongoTemplate
 import utils.BsonParser
-import utils.UtilFunctions.md5
+import utils.UtilFunctions.{md5, using}
 import utils.implicits.Global.bsonDecoderContext
 
+import java.io.{FileInputStream, InputStream}
 import java.nio.file.{Files, Path}
 import scala.annotation.tailrec
 
-case class ScanRequest(path: Path)
-case class ScanResponse(path: Path, matchedMalware: Boolean, malwareName: Option[String])
+case class ScanRequest(path: Path, zipFileRef: Option[Path])
+case class ScanResponse(path: Path, matchedMalware: Boolean, malwareName: String)
 
 class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
 
   private val signatures = mongoTemplate.collections.signatures
-  private val receiver = context.actorSelection("user/InitialActor")
+  private val receiver = context.system.actorSelection("user/ScannerManager")
 
   override def receive: Receive = {
     case r: ScanRequest =>
-      val bytes = Files.readAllBytes(r.path)
-
       signatures
         .find()
         .subscribe(new Observer[Document] {
           override def onNext(result: Document): Unit = {
             val next = BsonParser.decode(result, MalwareObject.bsonCodec)
             if (next.prefix.nonEmpty) {
-              val trimmedByOffsets = bytes.drop(next.offsetStart).dropRight(next.offsetEnd)
-              receiver ! ScanResponse(r.path, isInfected(trimmedByOffsets, next), Some(next.name))
+              using(new FileInputStream(r.path.toFile)) { in =>
+                in.skip(next.offsetStart)
+                val bytes = in.readNBytes(next.offsetEnd - next.offsetStart)
+                r.zipFileRef.fold(receiver ! ScanResponse(r.path, isInfected(bytes, next), next.name))(p =>
+                  receiver ! ScanResponse(p, isInfected(bytes, next), next.name)
+                )
+              } {
+                case e: Exception =>
+                  logger.error(s"Failed to scan for ${next.name} in ${r.path.getFileName}", e)
+              }
             }
           }
 
-          override def onError(e: Throwable): Unit = logger.error("Signatures scanning failed", e)
+          override def onError(e: Throwable): Unit = logger.error("Signature scanning failed", e)
 
           override def onComplete(): Unit =
             logger.debug("Signatures scanning finished")
