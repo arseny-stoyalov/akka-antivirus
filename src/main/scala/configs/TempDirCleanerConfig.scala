@@ -1,3 +1,5 @@
 package configs
 
-case class TempDirCleanerConfig(ttl: Int, delay: Int)
+import scala.concurrent.duration.FiniteDuration
+
+case class TempDirCleanerConfig(ttl: FiniteDuration, delay: FiniteDuration)

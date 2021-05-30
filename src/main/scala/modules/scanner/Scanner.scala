@@ -22,7 +22,7 @@ case class ScanResponse(path: Path, matchedMalware: Boolean, malwareName: String
 class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
 
   private val signatures = mongoTemplate.collections.signatures
-  private val receiver = context.system.actorSelection("user/ScannerManager")
+  private val receiver = context.actorSelection("user/ScannerManager")
 
   override def receive: Receive = {
     case r: ScanRequest =>

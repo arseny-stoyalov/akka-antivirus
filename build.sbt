@@ -45,8 +45,6 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-remote"
 ).map(_ % akka)
 
-//libraryDependencies += "io.kaitai" % "kaitai-struct-runtime" % "0.9"
-
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"

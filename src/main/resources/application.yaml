@@ -15,5 +15,9 @@ magic-numbers:
       offset: 0
 
 temp-dir-cleaner:
-    ttl: 30
-    delay: 30
+  ttl: 30 seconds
+  delay: 30 seconds
+
+directory-monitor:
+  schedule-delay: 3 seconds
+
