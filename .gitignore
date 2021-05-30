@@ -4,3 +4,6 @@
 /.scalafmt.conf
 /project/project/target/
 /project/target/
+/src/main/resources/META-INF/
+/out/
+/project/META-INF/

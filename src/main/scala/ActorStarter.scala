@@ -1,5 +1,15 @@
 import akka.actor.{Actor, ActorSystem, Props}
-import commons._
+import commons.{
+  MonitoringRequest,
+  ScheduleRequest,
+  ServiceAnswer,
+  SingleScanRequest,
+  StopMonitoringRequest,
+  StopScheduleRequest,
+  StopServiceRequest,
+  StopSingleScanRequest,
+  StoppedScanResponse
+}
 import configs.RootConfigs
 import modules.bypass.DirectoryResolver
 import modules.detection.{ScanObject, ScanObjectDetector, TempDirCleaner}
