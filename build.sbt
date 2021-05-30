@@ -45,6 +45,8 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-remote"
 ).map(_ % akka)
 
+libraryDependencies += "com.enragedginger" %% "akka-quartz-scheduler" % "1.9.1-akka-2.6.x"
+
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"

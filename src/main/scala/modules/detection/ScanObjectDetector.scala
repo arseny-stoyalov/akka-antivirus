@@ -1,25 +1,32 @@
 package modules.detection
 
-import akka.actor.{Actor, ActorRef}
-import configs.MagicNumberConfig
-import modules.bypass.ResolveDirRequest
-import modules.scanner.ScanRequest
-import org.apache.commons.io.FilenameUtils
-import utils.UtilFunctions.{acceptsMagicNumber, deleteDirWithContents, using}
+import akka.actor.{Actor, ActorRef, Props}
 import cats.syntax.option._
 import com.typesafe.scalalogging.LazyLogging
+import configs.RootConfigs
+import modules.bypass.ResolveDirRequest
+import modules.scanner.{ScanReportDelegator, ScanRequest, Scanner}
+import org.apache.commons.io.FilenameUtils
+import services.mongo.MongoTemplate
+import source.ScanObjectSource
+import utils.UtilFunctions.{acceptsMagicNumber, deleteDirWithContents, using}
 
 import java.nio.file.{Files, Path, Paths}
 import java.util.zip.ZipFile
 import scala.jdk.CollectionConverters.EnumerationHasAsScala
 
-case class ScanObject(path: Path, zipFileRef: Option[Path])
+case class ScanObject(path: Path, zipFileRef: Option[Path], replyTo: ActorRef, source: ScanObjectSource)
 
-class ScanObjectDetector(config: MagicNumberConfig, temps: Path) extends Actor with LazyLogging {
+class ScanObjectDetector(config: RootConfigs, temps: Path) extends Actor with LazyLogging {
+
+  private val mongoTemplate = MongoTemplate(config.mongo)
 
   private val dirResolver = context.system.actorSelection("user/DirectoryResolver")
   private val tempDirCleaner = context.system.actorSelection("user/TempDirCleaner")
-  private val scanner = context.system.actorSelection("user/Scanner")
+  private val scanObjectReceiver = context.system.actorSelection("user/ScannerManager")
+  private val scanReportDelegator =
+    context.actorOf(Props(classOf[ScanReportDelegator], scanObjectReceiver))
+  private val scanner = context.actorOf(Props(classOf[Scanner], mongoTemplate, scanReportDelegator), "Scanner")
 
   override def receive: Receive = {
 
@@ -28,20 +35,19 @@ class ScanObjectDetector(config: MagicNumberConfig, temps: Path) extends Actor w
 
     case file: ScanObject =>
       file match {
-        case zip if acceptsMagicNumber(zip.path.toFile, config.zip) => processZip(file)
-        case exe if acceptsMagicNumber(exe.path.toFile, config.executable) => processExecutable(file)
+        case zip if acceptsMagicNumber(zip.path.toFile, config.magicNumbers.zip) => processZip(file)
+        case exe if acceptsMagicNumber(exe.path.toFile, config.magicNumbers.executable) => processExecutable(file)
         case _ => ()
       }
 
   }
 
-  override def postStop(): Unit =
-    deleteDirWithContents(temps)
+  private def processExecutable(scanObject: ScanObject) = {
+    scanObjectReceiver ! scanObject
+    scanner ! ScanRequest(scanObject.path, scanObject.zipFileRef, scanObject.replyTo, scanObject.source)
+  }
 
-  def processExecutable(scanObject: ScanObject) =
-    scanner ! ScanRequest(scanObject.path, scanObject.zipFileRef)
-
-  def processZip(scanObject: ScanObject) = {
+  private def processZip(scanObject: ScanObject) = {
     val name = FilenameUtils.removeExtension(scanObject.path.getFileName.toString)
     val temp = Files.createTempDirectory(temps, name)
 
@@ -56,11 +62,16 @@ class ScanObjectDetector(config: MagicNumberConfig, temps: Path) extends Actor w
       if (p != unzipped) deleteDirWithContents(p)
     }
 
-    context.self ! ScanObject(unzipped, scanObject.zipFileRef.getOrElse(scanObject.path).some)
+    context.self ! ScanObject(
+      unzipped,
+      scanObject.zipFileRef.getOrElse(scanObject.path).some,
+      scanObject.replyTo,
+      scanObject.source
+    )
 
   }
 
-  def unzip(zipPath: Path, outputPath: Path): Unit =
+  private def unzip(zipPath: Path, outputPath: Path): Unit =
     using(new ZipFile(zipPath.toFile)) { zipFile =>
       for (entry <- zipFile.entries.asScala) {
         val path = outputPath.resolve(entry.getName)

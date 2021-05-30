@@ -4,5 +4,6 @@ case class RootConfigs(
   mongo: MongoConfigs,
   magicNumbers: MagicNumberConfig,
   tempDirCleaner: TempDirCleanerConfig,
-  directoryMonitor: DirectoryMonitorConfig
+  directoryMonitor: DirectoryMonitorConfig,
+  tempDirPath: String
 )

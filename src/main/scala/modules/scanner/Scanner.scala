@@ -1,28 +1,34 @@
 package modules.scanner
 
-import akka.actor.Actor
-import com.typesafe.scalalogging.{LazyLogging, Logger}
+import akka.actor.{Actor, ActorRef}
+import com.typesafe.scalalogging.LazyLogging
 import model.MalwareObject
 import modules.scanner.Scanner.isInfected
-import monix.reactive.Observable
 import org.mongodb.scala.Observer
 import org.mongodb.scala.bson.collection.immutable.Document
 import services.mongo.MongoTemplate
+import source.ScanObjectSource
 import utils.BsonParser
 import utils.UtilFunctions.{md5, using}
 import utils.implicits.Global.bsonDecoderContext
 
-import java.io.{FileInputStream, InputStream}
-import java.nio.file.{Files, Path}
+import java.io.FileInputStream
+import java.nio.file.Path
 import scala.annotation.tailrec
+import scala.concurrent.duration.DurationInt
 
-case class ScanRequest(path: Path, zipFileRef: Option[Path])
-case class ScanResponse(path: Path, matchedMalware: Boolean, malwareName: String)
+case class ScanRequest(path: Path, zipFileRef: Option[Path], replyTo: ActorRef, source: ScanObjectSource)
+case class ScanResponse(
+  path: Path,
+  matchedMalware: Boolean,
+  malwareName: String,
+  replyTo: ActorRef,
+  source: ScanObjectSource
+)
 
-class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
+class Scanner(mongoTemplate: MongoTemplate, receiver: ActorRef) extends Actor with LazyLogging {
 
   private val signatures = mongoTemplate.collections.signatures
-  private val receiver = context.actorSelection("user/ScannerManager")
 
   override def receive: Receive = {
     case r: ScanRequest =>
@@ -30,14 +36,16 @@ class Scanner(mongoTemplate: MongoTemplate) extends Actor with LazyLogging {
         .find()
         .subscribe(new Observer[Document] {
           override def onNext(result: Document): Unit = {
+            //todo: Для тестов
+//            Thread.sleep(10.seconds.toMillis)
             val next = BsonParser.decode(result, MalwareObject.bsonCodec)
             if (next.prefix.nonEmpty) {
               using(new FileInputStream(r.path.toFile)) { in =>
                 in.skip(next.offsetStart)
                 val bytes = in.readNBytes(next.offsetEnd - next.offsetStart)
-                r.zipFileRef.fold(receiver ! ScanResponse(r.path, isInfected(bytes, next), next.name))(p =>
-                  receiver ! ScanResponse(p, isInfected(bytes, next), next.name)
-                )
+                r.zipFileRef.fold(
+                  receiver ! ScanResponse(r.path, isInfected(bytes, next), next.name, r.replyTo, r.source)
+                )(p => receiver ! ScanResponse(p, isInfected(bytes, next), next.name, r.replyTo, r.source))
               } {
                 case e: Exception =>
                   logger.error(s"Failed to scan for ${next.name} in ${r.path.getFileName}", e)

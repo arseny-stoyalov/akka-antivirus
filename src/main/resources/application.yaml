@@ -21,3 +21,5 @@ temp-dir-cleaner:
 directory-monitor:
   schedule-delay: 3 seconds
 
+temp-dir-path: /Users/a1/Downloads/study
+

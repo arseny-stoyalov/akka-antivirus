@@ -2,3 +2,5 @@
 /target/
 /*.log
 /.scalafmt.conf
+/project/project/target/
+/project/target/
